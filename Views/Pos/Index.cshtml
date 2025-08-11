@@ -1,0 +1,157 @@
+﻿@model SimplePOS.ViewModels.PosViewModel
+@{
+    Layout = "_Layout";
+}
+
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+
+<div class="container my-3">
+    <h2>POS</h2>
+
+    <div class="row">
+        <div class="col-md-6">
+            <label>Customer</label>
+            <select id="customerSelect" class="form-select">
+                <option value="">-- New Customer --</option>
+                @foreach(var c in Model.Customers)
+                {
+                    <option value="@c.Id">@c.Name (@c.ContactNumber)</option>
+                }
+            </select>
+
+            <div id="newCustomerFields" class="mt-2">
+                <input id="newCustomerName" class="form-control mb-1" placeholder="Customer name (required for new)" />
+                <input id="newCustomerContact" class="form-control" placeholder="Contact number" />
+            </div>
+
+            <hr />
+
+            <label>Add item</label>
+            <div class="input-group mb-2">
+                <select id="productSelect" class="form-select">
+                    <option value="">Select product</option>
+                    @foreach(var p in Model.Products)
+                    {
+                        <option value="@p.Id" data-price="@p.Price" data-stock="@p.QuantityInStock">@p.Name - @p.Price.ToString("0.00") (Stock: @p.QuantityInStock)</option>
+                    }
+                </select>
+                <input id="qtyInput" type="number" min="1" value="1" class="form-control" style="max-width:100px" />
+                <button id="addLine" class="btn btn-primary">Add</button>
+            </div>
+
+            <table class="table table-sm" id="cartTable">
+                <thead><tr><th>Product</th><th>Qty</th><th>Unit</th><th>Total</th><th></th></tr></thead>
+                <tbody></tbody>
+            </table>
+
+            <div class="d-flex justify-content-between">
+                <strong>Total:</strong>
+                <strong id="grandTotal">0.00</strong>
+            </div>
+
+            <div class="mt-3">
+                <button id="submitOrder" class="btn btn-success">Submit & Print</button>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <h5>Inventory</h5>
+            <table class="table table-sm">
+                <thead><tr><th>Item</th><th>Price</th><th>In Stock</th></tr></thead>
+                <tbody>
+                @foreach(var p in Model.Products)
+                {
+                    <tr><td>@p.Name</td><td>@p.Price.ToString("0.00")</td><td>@p.QuantityInStock</td></tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    const products = {}; // productId-> {name, price, stock}
+    @foreach(var p in Model.Products)
+    {
+        <text>products[@p.Id] = { id: @p.Id, name: "@p.Name", price: @p.Price, stock: @p.QuantityInStock };</text>
+    }
+
+    const cart = [];
+
+    function renderCart() {
+        const tbody = document.querySelector("#cartTable tbody");
+        tbody.innerHTML = "";
+        let total = 0;
+        cart.forEach((line, idx) => {
+            const tr = document.createElement("tr");
+            tr.innerHTML = `
+                <td>${line.name}</td>
+                <td>${line.quantity}</td>
+                <td>${line.unitPrice.toFixed(2)}</td>
+                <td>${(line.unitPrice * line.quantity).toFixed(2)}</td>
+                <td><button class="btn btn-sm btn-danger" data-idx="${idx}">x</button></td>
+            `;
+            tbody.appendChild(tr);
+            total += line.unitPrice * line.quantity;
+        });
+        document.getElementById("grandTotal").innerText = total.toFixed(2);
+
+        tbody.querySelectorAll("button").forEach(b => {
+            b.addEventListener("click", (e) => {
+                const idx = e.target.dataset.idx;
+                cart.splice(idx, 1);
+                renderCart();
+            });
+        });
+    }
+
+    document.getElementById("addLine").addEventListener("click", () => {
+        const prodSel = document.getElementById("productSelect");
+        const pid = parseInt(prodSel.value);
+        const qty = parseInt(document.getElementById("qtyInput").value);
+        if (!pid || qty <= 0) return alert("Select product and quantity > 0");
+
+        const p = products[pid];
+        if (!p) return alert("Product not found");
+        if (qty > p.stock) return alert("Not enough stock");
+
+        cart.push({ productId: pid, name: p.name, quantity: qty, unitPrice: parseFloat(p.price) });
+        renderCart();
+    });
+
+    async function submitOrder() {
+        if (cart.length === 0) return alert("Cart empty");
+
+        const customerId = parseInt(document.getElementById("customerSelect").value || 0);
+        const newName = document.getElementById("newCustomerName").value.trim();
+        const newContact = document.getElementById("newCustomerContact").value.trim();
+
+        const payload = {
+            customerId: customerId > 0 ? customerId : null,
+            newCustomerName: customerId === 0 ? newName : null,
+            newCustomerContact: customerId === 0 ? newContact : null,
+            items: cart.map(c => ({ productId: c.productId, quantity: c.quantity }))
+        };
+
+        try {
+            const res = await fetch('/Pos/CreateOrder', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!data.success) {
+                alert("Error: " + (data.error || "unknown"));
+                return;
+            }
+            // redirect to invoice page to print
+            window.location = `/Pos/Invoice?id=${data.orderId}`;
+        } catch (err) {
+            alert("Network error");
+            console.error(err);
+        }
+    }
+
+    document.getElementById("submitOrder").addEventListener("click", submitOrder);
+
+</script>
