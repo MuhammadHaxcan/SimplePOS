@@ -85,6 +85,24 @@
 
             return order;
         }
+
+        public async Task RestockAsync(RestockItemVm vm, CancellationToken ct = default)
+        {
+            var product = await _db.Products.FindAsync(new object[] { vm.ProductId }, ct)
+                ?? throw new InvalidOperationException("Product not found.");
+
+            product.QuantityInStock += vm.Quantity;
+
+            var invTx = new InventoryTransaction
+            {
+                ProductId = product.Id,
+                QuantityChange = vm.Quantity,
+                Type = InventoryTransactionType.Purchase
+            };
+            _db.InventoryTransactions.Add(invTx);
+
+            await _db.SaveChangesAsync(ct);
+        }
     }
 
 }

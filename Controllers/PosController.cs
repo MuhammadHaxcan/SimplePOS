@@ -9,13 +9,13 @@ namespace SimplePOS.Controllers
 
     public class PosController : Controller
     {
-        private readonly AppDbContext _db;
         private readonly IPosService _posService;
+        private readonly AppDbContext _db;
 
-        public PosController(AppDbContext db, IPosService posService)
+        public PosController(IPosService posService, AppDbContext db)
         {
-            _db = db;
             _posService = posService;
+            _db = db;
         }
 
         [HttpGet]
@@ -55,6 +55,28 @@ namespace SimplePOS.Controllers
             if (order == null) return NotFound();
 
             return View(order); 
+        }
+
+        [HttpGet]
+        public async Task<IActionResult> Restock()
+        {
+            var products = await _db.Products.ToListAsync();
+            ViewBag.Products = products;
+            return View(new RestockItemVm());
+        }
+
+        [HttpPost]
+        public async Task<IActionResult> Restock(RestockItemVm vm)
+        {
+            if (!ModelState.IsValid)
+            {
+                ViewBag.Products = await _db.Products.ToListAsync();
+                return View(vm);
+            }
+
+            await _posService.RestockAsync(vm);
+            TempData["Success"] = "Product restocked successfully.";
+            return RedirectToAction("Index");
         }
     }
 
